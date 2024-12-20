@@ -319,10 +319,13 @@ class DirectPrompt(Baseline):
                 logger.info("Using standard OpenAI client.")
                 from openai import OpenAI
 
+                # Initialize the client with base_url
                 client = OpenAI(
                     base_url=OPENAI_BASE_URL,
-                    api_key=OPENAI_API_KEY
-                ).chat.completions.create
+                    api_key=OPENAI_API_KEY,
+                )
+                # Return the create method specifically
+                client = client.chat.completions.create
 
         elif self.model == "llama-3.1-405b-instruct":
             return partial(llama_3_1_405b_instruct_client, temperature=self.temperature)
