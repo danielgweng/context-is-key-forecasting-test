@@ -53,10 +53,12 @@ from .tasks.fred_county_tasks import (
     __CLUSTERS__ as FRED_COUNTY_CLUSTERS,
 )
 from .tasks.pems_tasks import __TASKS__ as PEMS_TASKS, __CLUSTERS__ as PEMS_CLUSTERS
+from .tasks.gmv_tasks import __TASKS__ as GMV_TASKS, __CLUSTERS__ as GMV_CLUSTERS
 
 # All tasks that are officially included in the benchmark
 ALL_TASKS = (
-    ELECTRICITY_TASKS
+    GMV_TASKS
+    # ELECTRICITY_TASKS
     # + NN5_TASKS
     # + PRED_CHANGE_TASKS
     # + PREDICTABLE_CONSTRAINT_TASKS
