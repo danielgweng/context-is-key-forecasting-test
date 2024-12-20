@@ -11,6 +11,7 @@ import requests
 from functools import partial
 import time
 import re
+from pathlib import Path
 
 from transformers import pipeline
 from types import SimpleNamespace
@@ -27,6 +28,7 @@ from ..config import (
     OPENAI_API_VERSION,
     OPENAI_AZURE_ENDPOINT,
     OPENAI_USE_AZURE,
+    RESULT_CACHE_PATH,
 )
 from .utils import extract_html_tags
 
@@ -272,6 +274,7 @@ class DirectPrompt(Baseline):
         token_cost: dict = None,
         temperature: float = 1.0,
         dry_run: bool = False,
+        output_folder=None,
     ) -> None:
         self.model = model
         self.use_context = use_context
@@ -291,6 +294,7 @@ class DirectPrompt(Baseline):
         self.total_cost = 0  # Accumulator for monetary value of queries
         self.temperature = temperature
         self.dry_run = dry_run
+        self.output_folder = output_folder
 
         if not dry_run and self.model in LLM_MAP.keys():
             self.llm, self.tokenizer = get_model_and_tokenizer(
@@ -350,28 +354,8 @@ class DirectPrompt(Baseline):
 
         return client
 
-    def make_prompt(self, task_instance, max_digits=6):
-        """
-        Generate the prompt for the model
-
-        Notes:
-        - Assumes a uni-variate time series
-
-        """
-        logger.info("Building prompt for model.")
-
-        # Extract time series data
-        hist_time = task_instance.past_time.index.strftime("%Y-%m-%d %H:%M:%S").values
-        hist_value = task_instance.past_time.values[:, -1]
-        pred_time = task_instance.future_time.index.strftime("%Y-%m-%d %H:%M:%S").values
-        # "g" Print up to max_digits digits, although it switch to scientific notation when y >= 1e6,
-        # so switch to "f" without any digits after the dot if y is too large.
-        history = "\n".join(
-            f"({x}, {y:.{max_digits}g})" if y < 10**max_digits else f"({x}, {y:.0f})"
-            for x, y in zip(hist_time, hist_value)
-        )
-
-        # Extract context
+    def get_context(self, task_instance):
+        """Extract context from task instance"""
         context = ""
         if self.use_context:
             if task_instance.background:
@@ -380,6 +364,30 @@ class DirectPrompt(Baseline):
                 context += f"Constraints: {task_instance.constraints}\n"
             if task_instance.scenario:
                 context += f"Scenario: {task_instance.scenario}\n"
+        return context
+
+    def make_prompt(self, task_instance, max_digits=6):
+        """
+        Generate the prompt for the model
+
+        Notes:
+        - Assumes a uni-variate time series
+        """
+        logger.info("Building prompt for model.")
+
+        # Extract time series data
+        hist_time = task_instance.past_time.index.strftime("%Y-%m-%d").values
+        hist_value = task_instance.past_time.values[:, -1]
+        pred_time = task_instance.future_time.index.strftime("%Y-%m-%d").values
+        # "g" Print up to max_digits digits, although it switch to scientific notation when y >= 1e6,
+        # so switch to "f" without any digits after the dot if y is too large.
+        history = "\n".join(
+            f"({x}, {y:.{max_digits}g})" if y < 10**max_digits else f"({x}, {y:.0f})"
+            for x, y in zip(hist_time, hist_value)
+        )
+
+        # Get context
+        context = self.get_context(task_instance)
 
         prompt = f"""
 I have a time series forecasting task for you.
@@ -395,7 +403,8 @@ Here is a historical time series in (timestamp, value) format:
 {history}
 </history>
 
-Now please predict the value at the following timestamps: {pred_time}.
+Please predict the value for EACH DAY from {pred_time[0]} to {pred_time[-1]} inclusive.
+You must provide exactly one prediction for each day in this range, with no gaps or duplicates.
 
 Return the forecast in (timestamp, value) format in between <forecast> and </forecast> tags.
 Do not include any other information (e.g., comments) in the forecast.
@@ -451,6 +460,12 @@ Example:
         total_client_time = 0.0
 
         prompt = self.make_prompt(task_instance)
+        logger.info(prompt)
+        
+        # Store prompt in task instance and result
+        task_instance.prompt = prompt
+        logger.info(f"Stored prompt of length {len(prompt)} in task instance {task_instance.name}")
+        
         messages = [
             {
                 "role": "system",
@@ -464,6 +479,7 @@ Example:
 
         total_tokens = {"input": 0, "output": 0}
         valid_forecasts = []
+        extra_info = {"prompt": prompt}  # Store prompt in extra_info for caching
 
         max_batch_size = task_instance.max_directprompt_batch_size
         if max_batch_size is not None:
@@ -487,7 +503,7 @@ Example:
                     messages=messages,
                     # Pass future timestamps as kwarg in case the client supports constrained decoding
                     future_timestamps=task_instance.future_time.index.strftime(
-                        "%Y-%m-%d %H:%M:%S"
+                        "%Y-%m-%d"
                     ).values,
                 )
             else:
@@ -520,7 +536,7 @@ Example:
                     forecast = [
                         forecast[t]
                         for t in task_instance.future_time.index.strftime(
-                            "%Y-%m-%d %H:%M:%S"
+                            "%Y-%m-%d"
                         )
                     ]
 
@@ -579,11 +595,9 @@ Example:
                 f"Failed to get {n_samples} valid forecasts. Got {len(valid_forecasts)} instead."
             )
 
-        extra_info = {
-            "total_input_tokens": total_tokens["input"],
-            "total_output_tokens": total_tokens["output"],
-            "llm_outputs": llm_outputs,
-        }
+        extra_info["total_input_tokens"] = total_tokens["input"]
+        extra_info["total_output_tokens"] = total_tokens["output"]
+        extra_info["llm_outputs"] = llm_outputs
 
         # Estimate cost of API calls
         logger.info(f"Total tokens used: {total_tokens}")
@@ -608,6 +622,7 @@ Example:
 
         extra_info["total_time"] = time.time() - starting_time
         extra_info["total_client_time"] = total_client_time
+        extra_info["prompt"] = prompt
 
         return samples, extra_info
 

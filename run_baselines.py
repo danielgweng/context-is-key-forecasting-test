@@ -189,10 +189,10 @@ def experiment_directprompt(
     batch_size_on_retry=5,
     n_retries=3,
     temperature=1.0,
+    seeds=5,
 ):
     """
     DirectPrompt baselines
-
     """
     # Costs per 1000 tokens
     openai_costs = {
@@ -219,6 +219,21 @@ def experiment_directprompt(
     if not llm.startswith("openrouter-") and llm not in openai_costs:
         raise ValueError(f"Invalid model: {llm} -- Not in cost dictionary")
 
+    # Get cache name first
+    temp_forecaster = DirectPrompt(
+        model=llm,
+        use_context=use_context,
+        temperature=temperature,
+        dry_run=True
+    )
+    cache_name = temp_forecaster.cache_name
+    del temp_forecaster
+
+    # Create output directory
+    full_output_dir = output_folder / cache_name
+    full_output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create the real forecaster with the correct output path
     dp_forecaster = DirectPrompt(
         model=llm,
         use_context=use_context,
@@ -228,18 +243,25 @@ def experiment_directprompt(
         n_retries=n_retries,
         temperature=temperature,
         dry_run=skip_cache_miss,
+        output_folder=full_output_dir
     )
+    
     results = evaluate_all_tasks(
         dp_forecaster,
         n_samples=n_samples,
-        output_folder=f"{output_folder}/{dp_forecaster.cache_name}",
+        output_folder=full_output_dir,
         max_parallel=max_parallel,
         skip_cache_miss=skip_cache_miss,
+        seeds=seeds,
     )
+            
     total_cost = dp_forecaster.total_cost
+    extra_info = {
+        "total_cost": total_cost
+    }
     del dp_forecaster
 
-    return results, {"total_cost": total_cost}
+    return results, extra_info
 
 
 # def experiment_timellm(
@@ -349,13 +371,20 @@ def experiment_directprompt(
 #     )
 
 
-def compile_results(results, cap=None):
+def compile_results(results, extra_infos, output_folder, cap=None):
     # Compile results into Pandas dataframe
     errors = defaultdict(list)
     missing = defaultdict(list)
     results_ = {
         "Task": [task for task in list(results.values())[0]],
     }
+    
+    # Store forecasts and actuals
+    forecasts = defaultdict(dict)
+    actuals = defaultdict(dict)
+    timestamps = defaultdict(dict)
+    prompts = defaultdict(dict)
+    
     for method, method_results in results.items():
         _method_results = []
         for task in results_["Task"]:
@@ -375,6 +404,18 @@ def compile_results(results, cap=None):
                     else:
                         score = min(seed_res["score"], cap)
                     task_results.append(score)
+                    
+                    # Store forecasts, actuals and timestamps if available
+                    if "samples" in seed_res:
+                        forecasts[method][task] = seed_res["samples"]
+                    if "actuals" in seed_res:
+                        actuals[method][task] = seed_res["actuals"]
+                    if "timestamps" in seed_res:
+                        timestamps[method][task] = seed_res["timestamps"]
+                    
+                    # Store prompt if available in extra_info
+                    if method in extra_infos and "prompt" in extra_infos[method]:
+                        prompts[method][task] = extra_infos[method]["prompt"]
 
             mean = np.mean(task_results)
             std = np.std(task_results, ddof=1)
@@ -386,7 +427,34 @@ def compile_results(results, cap=None):
     results = pd.DataFrame(results_).sort_values("Task").set_index("Task")
     del results_
 
-    return results, missing, errors
+    # Save forecasts and actuals as CSV
+    print(f"Saving forecasts and actuals")
+    if forecasts and actuals and timestamps:
+        for method in forecasts:
+            for task in forecasts[method]:
+                # Create method-specific folder
+                method_folder = output_folder / method
+                task_folder = method_folder / task
+                task_folder.mkdir(parents=True, exist_ok=True)
+                
+                # Get data for this task
+                task_forecasts = forecasts[method][task]
+                task_actuals = actuals[method][task]
+                task_timestamps = timestamps[method][task]
+                
+                # Create DataFrame
+                df = pd.DataFrame()
+                df['timestamp'] = task_timestamps
+                df['actual'] = task_actuals.flatten()
+                
+                # Add each forecast sample as a column
+                for i in range(task_forecasts.shape[0]):
+                    df[f'forecast_{i+1}'] = task_forecasts[i, :, 0]
+                
+                # Save to CSV
+                df.to_csv(task_folder / "predictions.csv", index=False)
+
+    return results, missing, errors, forecasts, actuals, timestamps, prompts
 
 
 def main():
@@ -396,6 +464,12 @@ def main():
         type=int,
         default=25,
         help="Number of samples to evaluate",
+    )
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        default=5,
+        help="Number of seeds to evaluate on each task",
     )
     parser.add_argument(
         "--output",
@@ -468,6 +542,7 @@ def main():
         config["n_samples"] = args.n_samples
         config["output_folder"] = output_folder / exp_label
         config["skip_cache_miss"] = args.skip_cache_miss
+        config["seeds"] = args.seeds  # Add seeds to config
         print(f"\tConfig: {config}")
         # ... do it!
         function = globals().get(f"experiment_{exp['method']}")
@@ -482,17 +557,27 @@ def main():
         extra_infos[exp_label] = extra_info
 
         # Compile results
-        current_results, missing, errors = compile_results(
-            current_results, cap=args.cap
+        current_results, missing, errors, forecasts, actuals, timestamps, prompts = compile_results(
+            current_results, 
+            extra_infos, 
+            output_folder=output_folder / exp_label,  # Pass the output folder
+            cap=args.cap
         )
         print(current_results)
         print("Number of missing results:", {k: len(v) for k, v in missing.items()})
         print("Number of errors:", {k: len(v) for k, v in errors.items()})
 
-        # Save results to CSV. Note: Saved in output_folder / exp_label, not output_folder as it is exp-specific result
+        # Save results to CSV
         filename = "results.csv" if not args.cap else f"results-cap-{args.cap}.csv"
         print(f"Saving results to {output_folder/exp_label}/{filename}")
         current_results.to_csv(output_folder / exp_label / filename)
+        
+        # Save extra info including prompts
+        print(f"Saving extra info to {output_folder/exp_label}/extra_info.json")
+        with open(output_folder / exp_label / "extra_info.json", "w") as f:
+            json.dump(extra_infos[exp_label], f)
+            
+        # Save missing results and errors
         print(f"Saving missing results to {output_folder/exp_label}/missing.json")
         with open(output_folder / exp_label / "missing.json", "w") as f:
             json.dump(missing, f)

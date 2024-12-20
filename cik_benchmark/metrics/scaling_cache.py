@@ -134,9 +134,9 @@ def inverse_mean_forecast_range(task_class, seeds) -> float:
         instance = task_class(seed=s)
         only_column = instance.future_time.columns[-1]
         target = instance.future_time[only_column]
-        widths.append(target.max() - target.min())
-    mean_width = sum(widths) / len(widths)
-    return 1 / mean_width
+        widths.append(float(target.max() - target.min()))
+    mean_width = float(sum(widths)) / float(len(widths))
+    return float(1.0 / mean_width)
 
 
 inverse_mean_forecast_range.__version__ = (

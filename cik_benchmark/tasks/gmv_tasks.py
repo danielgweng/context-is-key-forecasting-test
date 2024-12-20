@@ -20,13 +20,14 @@ class GMVPredictionTask(UnivariateCRPSTask):
         query = """
         SELECT 
             ds,
-            gmv_local
+            SUM(gmv_local) as gmv_local
         FROM `sdp-prd-finance-data-science.intermediate.gmv_forecast_actuals_shop_currency`
         WHERE 
             fpa_region_group = 'United States'
             AND merchant_type = 'Plus'
             AND sales_channel = 'Online+'
             AND currency = 'USD'
+        GROUP BY ds
         ORDER BY ds
         """
         
@@ -37,7 +38,7 @@ class GMVPredictionTask(UnivariateCRPSTask):
         
         # Split into history and future - last 365 days as future
         future_series = df.iloc[-365:]
-        history_series = df.iloc[-365*3:-365]
+        history_series = df.iloc[-365*4:-365]
 
         # Convert to timestamp for consistency
         # future_series.index = future_series.index.to_timestamp()
@@ -50,6 +51,7 @@ class GMVPredictionTask(UnivariateCRPSTask):
         - weekly seasonality, Saturday and Sunday tend to be the slowest days of the week
         - yearly seasonality, November and December are the busiest months of the year due to Black Friday Cyber Monday (BFCM) and the Christmas holiday season
         - holiday seasonality, Black Friday Cyber Monday (BFCM) starts on the fourth Friday of November and ends on the Monday after Thanksgiving. However, we typically see a ramp up in GMV during the week leading up to BFCM.
+        - BFCM in 2024 starts 5 days later than it did in 2023.
         """
 
         # Instantiate the class variables

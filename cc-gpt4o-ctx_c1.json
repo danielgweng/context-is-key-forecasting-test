@@ -1,3 +1,9 @@
 [
-    {"label": "CC-GPT-4o", "method": "directprompt", "llm": "gpt-4o", "use_context": true}
+    {
+        "label": "CC-GPT-4o", 
+        "method": "directprompt", 
+        "llm": "gpt-4o", 
+        "use_context": true,
+        "batch_size_on_retry": 1
+    }
 ]

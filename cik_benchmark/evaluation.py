@@ -125,6 +125,19 @@ Scenario:
         )
 
 
+def save_prompt(task, path):
+    """
+    Save the prompt of a task to a file for future reference.
+    """
+    logger.info(f"Attempting to save prompt for task {task.name}")
+    if hasattr(task, 'prompt'):
+        logger.info(f"Found prompt of length {len(task.prompt)}")
+        with open(path / "prompt", "w") as f:
+            f.write(task.prompt)
+    else:
+        logger.warning(f"No prompt found for task {task.name}")
+
+
 def save_evaluation(evaluation, path):
     """
     Save the content of the task evaluation content to a file for future reference.
@@ -169,14 +182,23 @@ def evaluate_task(
             "score": (
                 evaluation["metric"] if isinstance(evaluation, dict) else evaluation
             ),
+            "samples": samples,
+            "actuals": task.future_time.values,
+            "timestamps": task.future_time.index.strftime("%Y-%m-%d %H:%M:%S").values,
         }
+        result.update(extra_info)
 
         if output_folder:
             # Save forecast plots
             plot_forecast_univariate(task=task, samples=samples, path=seed_folder)
 
-            # Save context
+            # Store prompt in task from result if available
+            if 'prompt' in result:
+                task.prompt = result['prompt']
+
+            # Save context and prompt
             save_context(task=task, path=seed_folder)
+            save_prompt(task=task, path=seed_folder)
 
             # Save metric content
             save_evaluation(evaluation=evaluation, path=seed_folder)

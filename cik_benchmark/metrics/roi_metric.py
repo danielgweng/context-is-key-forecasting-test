@@ -11,6 +11,9 @@ def mean_crps(target, samples):
     The mean of the CRPS over all variables
     """
     if target.size > 0:
+        # Convert target and samples to float arrays
+        target = np.asarray(target, dtype=np.float64)
+        samples = np.asarray(samples, dtype=np.float64)
         return crps(target, samples).mean()
     else:
         raise RuntimeError(

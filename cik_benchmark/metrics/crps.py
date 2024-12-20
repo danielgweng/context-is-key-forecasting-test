@@ -67,6 +67,7 @@ def crps(
     https://link.springer.com/article/10.1007/s11004-017-9709-7
 
     This is a O(n log n) per variable exact implementation, without estimation bias.
+    For the single sample case, returns the absolute difference between the sample and target.
 
     Parameters:
     -----------
@@ -85,6 +86,11 @@ def crps(
     ), f"shapes mismatch between: {target.shape} and {samples.shape}"
 
     num_samples = samples.shape[0]
+    
+    # For single sample case, return absolute difference
+    if num_samples == 1:
+        return np.abs(samples[0] - target)
+
     num_dims = samples.ndim
     sorted_samples = np.sort(samples, axis=0)
 
