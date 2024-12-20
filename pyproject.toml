@@ -6,8 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "cik-benchmark"
 description = "Context is Key: A Benchmark for Forecasting with Essential Textual Information"
 readme = "README.md"
-requires-python = ">3.9"
+requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
+version = "1.0"
 
 authors = [
     {name = "Andrew Robert Williams"},
@@ -39,8 +40,31 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "License :: OSI Approved :: Apache Software License",
 ]
-
-dynamic = ["dependencies", "optional-dependencies", "version"]
+dependencies = [
+    "causalchamber==0.1.1",
+    "chronos-forecasting",
+    "datasets>=2.17.1",
+    "gluonts[torch]>=0.14.4",
+    "gradio>=5.9.1",
+    "h5py>=3.12.1",
+    "huggingface-hub>=0.27.0",
+    "lag-llama",
+    "llm-processes",
+    "lm-format-enforcer>=0.10.9",
+    "nixtla>=0.6.4",
+    "numpy>=1.26.4",
+    "openai>=1.58.1",
+    "pandas>=2.1.4",
+    "sentencepiece>=0.2.0",
+    "statsmodels>=0.14.4",
+    "tactis",
+    "tenacity>=9.0.0",
+    "termcolor>=2.5.0",
+    "timellm",
+    "transformers>4.4.1",
+    "uni2ts[notebook]",
+    "unitime",
+]
 
 [project.urls]
 homepage = "https://github.com/ServiceNow/context-is-key-forecasting/"
@@ -74,3 +98,12 @@ exclude = '''
   | dist
 )/
 '''
+
+[tool.uv.sources]
+tactis = { git = "https://github.com/ServiceNow/TACTiS.git", rev = "tactis-2" }
+lag-llama = { git = "https://github.com/time-series-foundation-models/lag-llama.git", rev = "main" }
+llm-processes = { git = "https://github.com/aldro61/llm_processes.git", rev = "master" }
+chronos-forecasting = { git = "https://github.com/amazon-science/chronos-forecasting.git", rev = "main" }
+uni2ts = { git = "https://github.com/SalesforceAIResearch/uni2ts.git" }
+timellm = { git = "https://github.com/AndrewRWilliams/TimeLLMBaseline.git" }
+unitime = { git = "https://github.com/AndrewRWilliams/UniTimeBaseline.git" }

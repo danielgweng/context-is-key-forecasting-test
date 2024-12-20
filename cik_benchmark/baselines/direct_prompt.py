@@ -38,6 +38,8 @@ from os import getenv
 
 logger = logging.getLogger("DirectPrompt")
 
+OPENAI_BASE_URL = "https://proxy.shopify.ai/v1"
+
 # As of 28 Sep 2024
 OPENROUTER_COSTS = {
     "openrouter-llama-3-8b-instruct-DeepInfra": {"input": 0.000055, "output": 0.000055},
@@ -317,7 +319,10 @@ class DirectPrompt(Baseline):
                 logger.info("Using standard OpenAI client.")
                 from openai import OpenAI
 
-                client = OpenAI(api_key=OPENAI_API_KEY).chat.completions.create
+                client = OpenAI(
+                    base_url=OPENAI_BASE_URL,
+                    api_key=OPENAI_API_KEY
+                ).chat.completions.create
 
         elif self.model == "llama-3.1-405b-instruct":
             return partial(llama_3_1_405b_instruct_client, temperature=self.temperature)
